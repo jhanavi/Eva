@@ -14,9 +14,10 @@ import xml.etree.ElementTree as ET
 
 import cv2
 import numpy as np
-
+from src.storage.frame import Frame
 from src.storage.TaskManager import TaskManager
 from src.storage.abstract_loader import AbstractLoader
+from tqdm import tqdm
 
 
 # Make this return a dictionary of label to data for the whole dataset
@@ -100,11 +101,9 @@ class LoaderUadetrac(AbstractLoader):
             warnings.warn("Image array type is not np.....cannot save",
                           Warning)
 
-    def update_images(self, frame_ids, modified_images, disk=False):
-        count = 0
-        for id in frame_ids:
-            self.images[id] = modified_images[count]
-            count += 1
+    def update_images(self, frames, disk=False):
+        for frame in frames:
+            self.images[frame.id] = frame.image
         if disk:
             self.save_images()
 
@@ -122,12 +121,12 @@ class LoaderUadetrac(AbstractLoader):
                                    self.image_width, self.image_channels),
                             dtype=np.uint8)
 
-        for i in range(len(file_names)):
+        for i in tqdm(range(len(file_names))):
             file_name = file_names[i]
             img = cv2.imread(file_name)
             img = cv2.resize(img, (self.image_width, self.image_height))
             images[i] = img
-            print(i)
+
 
         return images
 
@@ -190,13 +189,21 @@ class LoaderUadetrac(AbstractLoader):
     def get_frames(self, frame_ids):
         if self.images is None:
             self.images = np.load(os.path.join(self.cache_dir, 'uadetrac.npy'))
-        return self.images[frame_ids]
+        images =  self.images[frame_ids]
+        frames = []
+        for frame_id, image in zip(frame_ids, images):
+            frame = Frame(frame_id, image)
+            frames.append(frame)
+        return frames
 
     def load_cached_boxes(self):
         save_dir = os.path.join(self.eva_dir, 'data', self.args.cache_path,
                                 self.args.cache_box_name)
         self.boxes = np.load(save_dir, allow_pickle=True)
         return self.boxes
+
+    def load_cached_frames(self):
+        self.images = np.load(os.path.join(self.cache_dir, 'uadetrac.npy'))
 
     def load_cached_labels(self):
         save_dir = os.path.join(self.eva_dir, 'data', self.args.cache_path,

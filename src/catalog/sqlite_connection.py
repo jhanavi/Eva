@@ -13,7 +13,6 @@ except ImportError:
     sys.path.append(root)
     from src.catalog.entity.dataset import Dataset
 from src.catalog.mapping_manager import MappingManager
-from src.editing_opr.apply_opr import Operator
 from src.storage.loader_uadetrac import LoaderUadetrac
 
 
@@ -109,13 +108,13 @@ if __name__ == "__main__":
     operator = Operator()
     s = time.time()
     images_list = operator.transform(['grayscale'], images_list)
-    loader.update_images(frame_ids, images_list, False)
+    loader.update_images(frame_ids, images_list, True)
     e = time.time()
-    print((e - s)/len(images_list))
+    print(e-s, (e - s)/len(images_list))
 
     s = time.time()
     images_list = operator.transform(['grayscale', 'blur'], images_list,
                                      {"kernel_size": 5})
-    loader.update_images(frame_ids, images_list, False)
+    loader.update_images(frame_ids, images_list, True)
     e = time.time()
-    print((e - s)/len(images_list))
+    print(e-s, (e - s)/len(images_list))
