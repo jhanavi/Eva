@@ -22,7 +22,7 @@ from itertools import product
 
 import numpy as np
 
-from src import constants
+import constants
 
 eva_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(eva_dir)

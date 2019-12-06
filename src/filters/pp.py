@@ -14,6 +14,8 @@ from sklearn.svm import LinearSVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.decomposition import PCA
 from sklearn.neural_network import MLPClassifier
+from math import floor
+from sklearn.metrics import accuracy_score
 
 # Meant to be a black box for trying all models available and returning statistics and model for
 # the query optimizer to choose for a given query
@@ -38,6 +40,8 @@ class PP:
                              #made this just in case there could be stats that are not saved
     self.pre_category_library = {}
     self.pre_category_stats = {"none": {"C": 0}}
+    self.max_epochs = 5
+    self.sample_ratio = 0.7
 
   def _generate_binary_labels(self, X):
     """
@@ -45,6 +49,7 @@ class PP:
     :param X:
     :return:
     """
+    print("X: ", X)
 
     labels = {"vehicle_type": ["car", "van", "bus", "others"],
                   "color": ["red", "white", "black", "silver"],
@@ -157,6 +162,32 @@ class PP:
     return reshaped_images
 
 
+  def _sample_train_val(self, X, label_dict):
+    X_train = {}
+    X_val = {}
+    label_dict_train = {}
+    label_dict_val = {}
+    n_samples, _= X["none"].shape
+    train_val_split_ratio = 0.8
+
+    # Randomly sample a fraction of the training data to be used by PP
+    random_indices = np.random.choice(n_samples, floor(self.sample_ratio * n_samples))
+    
+    mixed_indices = np.random.permutation(random_indices)
+
+    train_index_end = int(len(mixed_indices) * train_val_split_ratio)
+
+    for key, dataset in list(X.items()):
+      X_train[key] = dataset[mixed_indices[:train_index_end]]
+      X_val[key] = dataset[mixed_indices[train_index_end:]]
+
+    for key, labelset in list(label_dict.items()):
+      label_dict_train[key] = labelset[mixed_indices[:train_index_end]]
+      label_dict_val[key] = labelset[mixed_indices[train_index_end:]]
+
+    return X_train, X_val, label_dict_train, label_dict_val
+
+
   def _split_train_val(self, X, label_dict):
     X_train = {}
     X_val = {}
@@ -183,10 +214,35 @@ class PP:
     image_reshaped = self._reshape_image(image_matrix)
 
     X_preprocessed = self._preprocess(image_reshaped, label_dict)
-    X_train, X_val, label_dict_train, label_dict_val = self._split_train_val(X_preprocessed, label_dict)
-    self._process(X_train, label_dict_train)
+    X_train, X_val, label_dict_train, label_dict_val = self._sample_train_val(X_preprocessed, label_dict)
+    epoch_time = self._process(X_train, label_dict_train)
     self._evaluate(X_val, label_dict_val)
+
     return self.category_stats
+
+  def train_subset(self, image_matrix, data_table):
+    label_dict = self._generate_binary_labels(data_table)
+    image_reshaped = self._reshape_image(image_matrix)
+
+    X_preprocessed = self._preprocess(image_reshaped, label_dict)
+    epoch_time, accuracies = self._process_hyper_paramaters(X_preprocessed, label_dict)
+
+  def _process_hyper_paramaters(self, X_preprocessed, label_dict):
+    model = "svm"
+    max_iters = 0
+    epoch_time = []
+    accuracies = []
+
+    X, X_val, label_dict, label_dict_val = self._sample_train_val(X_preprocessed, label_dict)
+
+    for process_method in X:
+      for epoch in range(0, self.max_epochs):
+        tic = time.time()
+        self.svm([X[process_method], label_dict, process_method, epoch])
+        epoch_time.append(round(time.time() - tic))
+        accuracies.append(self._evaluate(X_val, label_dict_val))
+
+    return epoch_time, accuracies   
 
 
   def _process(self, X, label_dict):
@@ -218,6 +274,7 @@ class PP:
         model = self.category_library[category_name][model_name]
         score = model.score(X_pre, label_dict[category_name])
         y_hat = model.predict(X_pre)
+        #y_hat = model.predict_acc(X_pre)
         if category_name not in self.category_stats:
           self.category_stats[category_name] = {}
         if model_name not in self.category_stats[category_name]:
@@ -234,6 +291,16 @@ class PP:
     pre, pro = model_name.split("/")
     X_pre, _ = self.pre_model_library[pre]([X_test_reduced, {}])
     y_hat = model.predict(X_pre)
+    return y_hat
+
+  def predict_acc(self, X_test, category_name, model_name):
+    X_test_reduced = self._reshape_image(X_test)
+
+    model = self.category_library[category_name][model_name]
+    pre, pro = model_name.split("/")
+    X_pre, _ = self.pre_model_library[pre]([X_test_reduced, {}])
+    y_hat = model.predict(X_pre)
+    accuracy_score(y_true, y_hat)
     return y_hat
 
 
@@ -287,6 +354,23 @@ class PP:
         if label not in self.category_stats:
           self.category_stats[label] = {}
         self.category_stats[label][pre + "/svm"] = {"C": round(time.time() - tic + self.pre_category_stats[pre]["C"],2) }
+    return
+
+  def svm(self, args):
+    X, label_dict, pre, epoch = args
+    for label in label_dict:
+      tic = time.time()
+      if len(np.unique(label)) == 1:
+        continue
+      else:
+        svm = LinearSVC(random_state=0, max_iter=epoch)
+        svm.fit(X, label_dict[label])
+        if label not in self.category_library:
+          self.category_library[label] = {}
+        self.category_library[label][pre + '/svm'] = svm
+
+        if label not in self.category_stats:
+          self.category_stats[label] = {}
     return
 
   def _kde(self, args):

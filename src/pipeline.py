@@ -3,7 +3,8 @@ import sys
 
 import numpy as np
 
-from src import filters as pp, constants
+import filters.pp as pp
+import constants
 import loaders.load as load
 import query_optimizer.query_optimizer as qo
 
@@ -44,8 +45,8 @@ class Pipeline:
         self.train()
         pp_category_stats = self.PP.getCategoryStats()
         pp_models = self.PP.getCategoryModel()
-        print("Evaluating data....")
-        self.execute(pp_category_stats, pp_models)
+        #print("Evaluating data....")
+        #self.execute(pp_category_stats, pp_models)
 
     def _split_train_val(self, X, label_dict):
         n_samples, _, _, _ = X.shape
@@ -66,12 +67,13 @@ class Pipeline:
         return X_train, X_test, label_dict_train, label_dict_test
 
     def load(self):
-        eva_dir = os.path.dirname(os.path.abspath(__file__))
+        eva_dir = os.getcwd()
+        print("eva_dir: ", eva_dir)
         train_image_dir = os.path.join(eva_dir, "data", "ua_detrac",
-                                       "tiny-data")
+                                       "DETRAC-train-data", "tiny-data")
         train_anno_dir = os.path.join(eva_dir, "data", "ua_detrac",
-                                      "tiny-annotations")
-
+                                      "DETRAC-Train-Annotations-XML", "tiny-annotations")
+        print(train_image_dir, train_anno_dir)
         dir_dict = {"train_image": train_image_dir,
                     "train_anno": train_anno_dir,
                     "test_image": None}
@@ -94,8 +96,11 @@ class Pipeline:
                        "intersection"]
         label_of_interest = "vehicle_type"
 
-        pp_category_stats = self.PP.train_all(self.image_matrix_train,
-                                              self.data_table_train)  #
+
+        pp_category_stats = self.PP.train_subset(self.image_matrix_train,
+                                              self.data_table_train)
+        # pp_category_stats = self.PP.train_all(self.image_matrix_train,
+        #                                        self.data_table_train)  #
         # TODO: Need to fix this function
         # TODO: train UDF - but for now assume it is already trained
         # TODO: Need to get the trained result and feed into the query
