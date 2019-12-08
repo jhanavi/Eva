@@ -72,6 +72,7 @@ class Load:
 
         vehicle_type_labels, speed_labels, color_labels, intersection_labels \
             = self._load_XML(train_anno_dir, train_img_array)
+
         if __debug__:
             print(("Done loading the labels.. length of labels is " + str(
                 len(vehicle_type_labels))))

@@ -68,12 +68,10 @@ class Pipeline:
 
     def load(self):
         eva_dir = os.getcwd()
-        print("eva_dir: ", eva_dir)
         train_image_dir = os.path.join(eva_dir, "data", "ua_detrac",
                                        "DETRAC-train-data", "tiny-data")
         train_anno_dir = os.path.join(eva_dir, "data", "ua_detrac",
                                       "DETRAC-Train-Annotations-XML", "tiny-annotations")
-        print(train_image_dir, train_anno_dir)
         dir_dict = {"train_image": train_image_dir,
                     "train_anno": train_anno_dir,
                     "test_image": None}
@@ -100,7 +98,7 @@ class Pipeline:
         pp_category_stats = self.PP.train_subset(self.image_matrix_train,
                                               self.data_table_train)
         # pp_category_stats = self.PP.train_all(self.image_matrix_train,
-        #                                        self.data_table_train)  #
+        #                                        self.data_table_train)
         # TODO: Need to fix this function
         # TODO: train UDF - but for now assume it is already trained
         # TODO: Need to get the trained result and feed into the query

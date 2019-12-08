@@ -8,6 +8,7 @@ Outputs model statistics needed for the query optimizer
 
 import numpy as np
 import time
+from datetime import datetime
 
 from .kdewrapper import KernelDensityWrapper
 from sklearn.svm import LinearSVC
@@ -16,6 +17,8 @@ from sklearn.decomposition import PCA
 from sklearn.neural_network import MLPClassifier
 from math import floor
 from sklearn.metrics import accuracy_score
+import psutil
+import os
 
 # Meant to be a black box for trying all models available and returning statistics and model for
 # the query optimizer to choose for a given query
@@ -40,7 +43,7 @@ class PP:
                              #made this just in case there could be stats that are not saved
     self.pre_category_library = {}
     self.pre_category_stats = {"none": {"C": 0}}
-    self.max_epochs = 5
+
     self.sample_ratio = 0.7
 
   def _generate_binary_labels(self, X):
@@ -49,7 +52,6 @@ class PP:
     :param X:
     :return:
     """
-    print("X: ", X)
 
     labels = {"vehicle_type": ["car", "van", "bus", "others"],
                   "color": ["red", "white", "black", "silver"],
@@ -228,21 +230,45 @@ class PP:
     epoch_time, accuracies = self._process_hyper_paramaters(X_preprocessed, label_dict)
 
   def _process_hyper_paramaters(self, X_preprocessed, label_dict):
-    model = "svm"
+    models = ["rf"]
     max_iters = 0
-    epoch_time = []
-    accuracies = []
+    epoch_dict = {}
+    accuracies_dict = {}
 
     X, X_val, label_dict, label_dict_val = self._sample_train_val(X_preprocessed, label_dict)
 
     for process_method in X:
-      for epoch in range(0, self.max_epochs):
-        tic = time.time()
-        self.svm([X[process_method], label_dict, process_method, epoch])
-        epoch_time.append(round(time.time() - tic))
-        accuracies.append(self._evaluate(X_val, label_dict_val))
+      epoch_time = []
+      accuracies = []
 
-    return epoch_time, accuracies   
+      for model in models:
+        if model == "dnn":
+          epochs = [1, 3, 5]
+          for epoch in epochs:
+            tic = datetime.now()
+            self.model_library[model]([X[process_method], label_dict, process_method, epoch])
+            epoch_time.append((datetime.now() - tic).microseconds)
+            accuracies.append(self._evaluate(X_val, label_dict_val))
+          print(model + ", " + process_method + ", " + "epoch_time: ", epoch_time)
+          print(model + ", " + process_method + ", " + "accuracies: ", accuracies)
+          epoch_dict[model + "/" + process_method] = epoch_time
+          accuracies_dict[model + "/" + process_method] = accuracies
+        elif model == "rf":
+          trees = [10, 100]
+          for tree in trees:
+            tic = datetime.now()
+            self.model_library[model]([X[process_method], label_dict, process_method, tree])
+            epoch_time.append((datetime.now() - tic).microseconds)
+            accuracies.append(self._evaluate(X_val, label_dict_val))
+          print(model + ", " + process_method + ", " + "epoch_time: ", epoch_time)
+          print(model + ", " + process_method + ", " + "accuracies: ", accuracies)
+          epoch_dict[model + "/" + process_method] = epoch_time
+          accuracies_dict[model + "/" + process_method] = accuracies
+    print("epoch_time: ", epoch_dict)
+    print("accuracies: ", accuracies_dict)
+    #print("self.category_library", self.category_library)
+    print("self.category_stats", self.category_stats)
+    return epoch_dict, accuracies_dict   
 
 
   def _process(self, X, label_dict):
@@ -267,14 +293,16 @@ class PP:
     """
 
     for category_name in self.category_library:
+      
       for model_name in self.category_library[category_name]:
         #We need to parse by "/" token and apply the proper preprocessing method
+
         pre, pro = model_name.split("/")
         X_pre = X_test[pre]
         model = self.category_library[category_name][model_name]
         score = model.score(X_pre, label_dict[category_name])
         y_hat = model.predict(X_pre)
-        #y_hat = model.predict_acc(X_pre)
+
         if category_name not in self.category_stats:
           self.category_stats[category_name] = {}
         if model_name not in self.category_stats[category_name]:
@@ -282,6 +310,7 @@ class PP:
 
         self.category_stats[category_name][model_name]["A"] = score
         self.category_stats[category_name][model_name]["R"] = 1 - float(sum(y_hat)) / len(y_hat)
+    return score
 
 
   def predict(self, X_test, category_name, model_name):
@@ -300,42 +329,44 @@ class PP:
     pre, pro = model_name.split("/")
     X_pre, _ = self.pre_model_library[pre]([X_test_reduced, {}])
     y_hat = model.predict(X_pre)
-    accuracy_score(y_true, y_hat)
-    return y_hat
+    scores  = accuracy_score(y_true, y_hat)
+    return scores
 
 
   #random forest
   def _rf(self, args):
-    X, label_dict, pre = args
+    X, label_dict, pre, n_estimators = args
     for label in label_dict:
-      tic = time.time()
-      rf = RandomForestClassifier(max_depth=2, random_state=0)
+      tic = datetime.now()
+      rf = RandomForestClassifier(n_estimators=n_estimators, max_depth=2, random_state=0)
       rf.fit(X, label_dict[label])
       if label not in self.category_library:
         self.category_library[label] = {}
-      self.category_library[label][pre + '/rf'] = rf
+      self.category_library[label][pre + '/rf' + "_" + str(n_estimators)] = rf
 
       if label not in self.category_stats:
         self.category_stats[label] = {}
-      self.category_stats[label][pre + "/rf"] = {"C": round(time.time() - tic + self.pre_category_stats[pre]["C"], 2) }  #
-
+      self.category_stats[label][pre + "/rf" + "_" + str(n_estimators)] = {"C" : (datetime.now() - tic).microseconds + self.pre_category_stats[pre]["C"]}
+      process = psutil.Process(os.getpid())
+      self.category_stats[label][pre + "/rf" + "_" + str(n_estimators)].update({"M" : process.memory_info().rss})
 
 
   def _dnn(self, args):
-    X, label_dict, pre = args
+    X, label_dict, pre, epoch = args
     for label in label_dict:
       tic = time.time()
       dnn = MLPClassifier(solver='lbfgs', alpha=1e-5,
-                          hidden_layer_sizes = (5, 2), random_state = 1)
+                          hidden_layer_sizes = (5, 2), random_state = 1, max_iter=epoch)
       dnn.fit(X, label_dict[label])
       if label not in self.category_library:
         self.category_library[label] = {}
-      self.category_library[label][pre +'/dnn'] = dnn
+      self.category_library[label][pre +'/dnn' + "_" + str(epoch)] = dnn
 
       if label not in self.category_stats:
         self.category_stats[label] = {}
-      self.category_stats[label][pre + "/dnn"] = {"C": round(time.time() - tic + self.pre_category_stats[pre]["C"], 2) }
-
+      self.category_stats[label][pre + "/dnn" + "_" + str(epoch)] = {"C": (datetime.now() - tic).microseconds + self.pre_category_stats[pre]["C"] }
+      process = psutil.Process(os.getpid())
+      self.category_stats[label][pre + "/dnn" + "_" + str(epoch)] .update({"M": process.memory_info().rss})
     return
 
   def _svm(self, args):
@@ -354,6 +385,8 @@ class PP:
         if label not in self.category_stats:
           self.category_stats[label] = {}
         self.category_stats[label][pre + "/svm"] = {"C": round(time.time() - tic + self.pre_category_stats[pre]["C"],2) }
+        process = psutil.Process(os.getpid())
+        self.category_stats[label][pre + "/svm"] = {"M": process.memory_info().rss}
     return
 
   def svm(self, args):
@@ -387,7 +420,8 @@ class PP:
       if label not in self.category_stats:
         self.category_stats[label] = {}
       self.category_stats[label][pre + "/kde"] = {"C": round(time.time() - tic + self.pre_category_stats[pre]["C"], 2) }
-
+      process = psutil.Process(os.getpid())
+      self.category_stats[label][pre + "/kde"] = {"M": process.memory_info().rss}
     return
 
   def _pca(self, args):
