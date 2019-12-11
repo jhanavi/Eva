@@ -230,7 +230,7 @@ class PP:
     epoch_time, accuracies = self._process_hyper_paramaters(X_preprocessed, label_dict)
 
   def _process_hyper_paramaters(self, X_preprocessed, label_dict):
-    models = ["rf"]
+    models = ["dnn", "rf"]
     max_iters = 0
     epoch_dict = {}
     accuracies_dict = {}
@@ -238,36 +238,32 @@ class PP:
     X, X_val, label_dict, label_dict_val = self._sample_train_val(X_preprocessed, label_dict)
 
     for process_method in X:
-      epoch_time = []
-      accuracies = []
-
       for model in models:
         if model == "dnn":
-          epochs = [1, 3, 5]
+          epochs = [1, 2, 3, 4, 5]
           for epoch in epochs:
-            tic = datetime.now()
             self.model_library[model]([X[process_method], label_dict, process_method, epoch])
-            epoch_time.append((datetime.now() - tic).microseconds)
-            accuracies.append(self._evaluate(X_val, label_dict_val))
-          print(model + ", " + process_method + ", " + "epoch_time: ", epoch_time)
-          print(model + ", " + process_method + ", " + "accuracies: ", accuracies)
-          epoch_dict[model + "/" + process_method] = epoch_time
-          accuracies_dict[model + "/" + process_method] = accuracies
+            self._evaluate(X_val, label_dict_val)
         elif model == "rf":
-          trees = [10, 100]
+          trees = [50, 100, 150, 200, 250, 300]
           for tree in trees:
-            tic = datetime.now()
+
             self.model_library[model]([X[process_method], label_dict, process_method, tree])
-            epoch_time.append((datetime.now() - tic).microseconds)
-            accuracies.append(self._evaluate(X_val, label_dict_val))
-          print(model + ", " + process_method + ", " + "epoch_time: ", epoch_time)
-          print(model + ", " + process_method + ", " + "accuracies: ", accuracies)
-          epoch_dict[model + "/" + process_method] = epoch_time
-          accuracies_dict[model + "/" + process_method] = accuracies
-    print("epoch_time: ", epoch_dict)
-    print("accuracies: ", accuracies_dict)
+            self._evaluate(X_val, label_dict_val)
+
     #print("self.category_library", self.category_library)
-    print("self.category_stats", self.category_stats)
+    # print("self.category_stats", self.category_stats)
+
+    # write results to a text file
+
+    text_file = open("Output.txt", "w")
+    text_file.write("label, method, accuracy, time(microseconds)\n")
+    # print method and accuracy
+    for k1 in self.category_stats:
+      for k2 in self.category_stats[k1]:
+        text_file.write(k1 + ", " + k2 + ", " + str(self.category_stats[k1][k2]["A"]) + ", " + str(self.category_stats[k1][k2]["C"]) + "\n")
+      text_file.write("\n")
+    text_file.close()
     return epoch_dict, accuracies_dict   
 
 
@@ -346,7 +342,7 @@ class PP:
 
       if label not in self.category_stats:
         self.category_stats[label] = {}
-      self.category_stats[label][pre + "/rf" + "_" + str(n_estimators)] = {"C" : (datetime.now() - tic).microseconds + self.pre_category_stats[pre]["C"]}
+      self.category_stats[label][pre + "/rf" + "_" + str(n_estimators)] = {"C" : (datetime.now() - tic).microseconds}
       process = psutil.Process(os.getpid())
       self.category_stats[label][pre + "/rf" + "_" + str(n_estimators)].update({"M" : process.memory_info().rss})
 
@@ -354,7 +350,7 @@ class PP:
   def _dnn(self, args):
     X, label_dict, pre, epoch = args
     for label in label_dict:
-      tic = time.time()
+      tic = datetime.now()
       dnn = MLPClassifier(solver='lbfgs', alpha=1e-5,
                           hidden_layer_sizes = (5, 2), random_state = 1, max_iter=epoch)
       dnn.fit(X, label_dict[label])
@@ -364,7 +360,7 @@ class PP:
 
       if label not in self.category_stats:
         self.category_stats[label] = {}
-      self.category_stats[label][pre + "/dnn" + "_" + str(epoch)] = {"C": (datetime.now() - tic).microseconds + self.pre_category_stats[pre]["C"] }
+      self.category_stats[label][pre + "/dnn" + "_" + str(epoch)] = {"C": (datetime.now() - tic).microseconds}
       process = psutil.Process(os.getpid())
       self.category_stats[label][pre + "/dnn" + "_" + str(epoch)] .update({"M": process.memory_info().rss})
     return
